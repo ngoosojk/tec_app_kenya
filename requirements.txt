@@ -1,0 +1,6 @@
+streamlit
+matplotlib
+basemap
+streamlit-autorefresh
+numpy
+tensorflow
