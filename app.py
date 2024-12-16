@@ -1,3 +1,4 @@
+import os
 import json
 import urllib.request
 import time
@@ -8,7 +9,6 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import numpy as np
 import tensorflow as tf
-import os
 from tensorflow.keras.models import load_model
 from tensorflow.keras.callbacks import EarlyStopping
 
@@ -57,25 +57,20 @@ def prepare_data(ipp_lons, ipp_lats, vtec_values):
     return X, y
     
 # Function to train the model with early stopping
-def train_model(X_train, y_train, model_path='model.h5'):
-    if os.path.exists(model_path):
-        model = load_model(model_path, compile=False)
-        model.compile(optimizer='adam', loss='mean_absolute_error')
-        print("Loaded existing model.")
-    else:
-        model = tf.keras.models.Sequential([
-            tf.keras.layers.Input(shape=(2,)),
-            tf.keras.layers.Dense(64, activation='relu'),
-            tf.keras.layers.Dense(128, activation='relu'),
-            tf.keras.layers.Dropout(0.5),
-            tf.keras.layers.Dense(64, activation='relu'),
-            tf.keras.layers.Dropout(0.5),
-            tf.keras.layers.Dense(32, activation='relu'),
-            tf.keras.layers.Dropout(0.5),
-            tf.keras.layers.Dense(1)
-        ])
-        model.compile(optimizer='adam', loss='mean_absolute_error')
-        print("Created new model.")
+def train_model(X_train, y_train, model_path='model.keras'):
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Input(shape=(2,)),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(32, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(1)
+    ])
+    model.compile(optimizer='adam', loss='mean_absolute_error')
+    print("Created new model.")
 
     # Implement early stopping
     early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
@@ -87,13 +82,13 @@ def train_model(X_train, y_train, model_path='model.h5'):
     return model
 
 # Function to predict VTEC values using the trained model
+
 def predict_vtec(model, lons, lats):
     X_pred = np.column_stack((lons, lats))
     vtec_pred = model.predict(X_pred)
     return vtec_pred
 
-# Function to plot data from the JSON files and predicted VTEC values
-def plot_data(filenames, model):
+def plot_data(filenames, model_path='model.keras'):
     ipp_lons = []
     ipp_lats = []
     vtec_values = []
@@ -107,11 +102,18 @@ def plot_data(filenames, model):
 
     filtered_ipp_lons, filtered_ipp_lats, filtered_vtec_values = remove_outliers(ipp_lons, ipp_lats, vtec_values)
     X_train, y_train = prepare_data(filtered_ipp_lons, filtered_ipp_lats, filtered_vtec_values)
-    model = train_model(X_train, y_train)
+    
+    # Check if the model file exists before loading or training
+    if os.path.exists(model_path):
+        model = load_model(model_path, compile=False)
+        model.compile(optimizer='adam', loss='mean_absolute_error')
+        print("Loaded existing model.")
+    else:
+        model = train_model(X_train, y_train, model_path)
 
     min_latitude = -5.0
-    max_latitude = 5.1
-    min_longitude = 33.5
+    max_latitude = 5.2
+    min_longitude = 33.0
     max_longitude = 42.0
 
     grid_lons, grid_lats = np.meshgrid(np.linspace(min_longitude, max_longitude, 100), np.linspace(min_latitude, max_latitude, 100))
@@ -125,16 +127,42 @@ def plot_data(filenames, model):
                 resolution='l', ax=ax)
     m.drawcoastlines()
     m.drawcountries()
+
+    # Compute label positions with adjusted offsets
+    label_offset_lat = 0.3  # Increased offset for latitude labels
+    label_offset_lon = 0.2  # Reduced offset for longitude labels
+    parallels = np.arange(min_latitude, max_latitude, 5.0)
+    meridians = np.arange(min_longitude, max_longitude, 4.0)
+
+    # Add latitude labels with °N, °S, or 0°
+    for lat in parallels:
+        x, y = m(min_longitude - label_offset_lat, lat)  # Left label offset
+        if lat == 0:
+            label = '0°'
+        else:
+            direction = '°N' if lat > 0 else '°S'
+            label = f'{abs(lat)}{direction}'
+        plt.text(x, y, label, ha='right', va='center', fontsize=8, color='black')
+
+    # Add longitude labels with °E, °W, or 0°
+    for lon in meridians:
+        x, y = m(lon, min_latitude - label_offset_lon)  # Bottom label offset
+        if lon == 0:
+            label = '0°'
+        else:
+            direction = '°E' if lon > 0 else '°W'
+            label = f'{abs(lon)}{direction}'
+        plt.text(x, y, label, ha='center', va='top', fontsize=8, color='black')
+
+    # Plot the data
     x, y = m(grid_lons, grid_lats)
-    sc = m.scatter(x, y, c=grid_vtec, cmap='viridis', marker='o', vmin=0, vmax=100)
+    sc = m.scatter(x, y, c=grid_vtec.flatten(), cmap='viridis', marker='o', vmin=0, vmax=100)
 
-    plt.colorbar(sc, label='VTEC')
-    plt.xlabel('Longitude')
-    plt.ylabel('Latitude')
-
+    plt.colorbar(sc, label='TECU')
+    
     start_time_str = filenames[0].split('_')[1] + ' ' + filenames[0].split('_')[2] + ':' + filenames[0].split('_')[3] + ':' + filenames[0].split('_')[4]
     end_time_str = filenames[0].split('_')[5] + ' ' + filenames[0].split('_')[6] + ':' + filenames[0].split('_')[7] + ':' + filenames[0].split('_')[8].split('.')[0]
-    plt.title(f'IPP Latitude vs Longitude with VTEC values\n{start_time_str} to {end_time_str} UTC')
+    plt.title(f'Near Real-Time Hourly TEC Over Kenya\n{start_time_str} to {end_time_str} UTC')
 
     # Save the map as an image file in the maps folder
     map_filename = os.path.join('maps', f"map_{start_time_str.replace(' ', '_').replace(':', '-')}_to_{end_time_str.replace(' ', '_').replace(':', '-')}.png")
@@ -142,7 +170,7 @@ def plot_data(filenames, model):
 
     plt.tight_layout()
     st.pyplot(fig)
-
+    
 # Function to automate the process every 5 minutes
 @st.cache_data(ttl=240)
 def schedule_download_and_plot():
@@ -176,10 +204,24 @@ def schedule_download_and_plot():
     X_train, y_train = prepare_data(filtered_ipp_lons, filtered_ipp_lats, filtered_vtec_values)
     model = train_model(X_train, y_train)
 
-    plot_data([nai_filepath, kil_filepath], model)
+    plot_data([nai_filepath, kil_filepath], model_path='model.keras')
 
 # Streamlit app layout and execution
-st.title("Near Real-Time Total Electron Content (TEC) Over Kenya ")
-st.write("This app visualizes hourly TEC Over Kenya, updated after 5 mins.")
+st.title("Near Real-Time Total Electron Content (TEC) Over Kenya")
+st.write("This app visualizes hourly TEC over Kenya and automatically updates every 5 minutes. Note: 1 TECU (Total Electron Content Unit) is equal to 10^16 electrons/m² and can introduce an error of about 0.16 meters in Global Navigation Satellite Systems (GNSS) positioning, including in the Global Positioning System (GPS).")
 st_autorefresh(interval=60000, key="data_refresh")
 schedule_download_and_plot()
+
+# Function to reboot the app
+def auto_reboot(interval):
+    time.sleep(interval)
+    st.experimental_rerun()
+
+# Set the interval (in seconds) for the reboot
+interval = 3600  # 1 hour
+
+# Display a message
+st.write("This app is set to reboot every hour to reduce computational resource usage and ensure efficient performance.")
+
+# Call the auto_reboot function
+auto_reboot(interval)
