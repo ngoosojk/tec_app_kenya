@@ -11,6 +11,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras.callbacks import EarlyStopping
+import psutil
+import pytz
 
 # Create directories if they don't exist
 os.makedirs('datasets', exist_ok=True)
@@ -212,16 +214,45 @@ st.write("This app visualizes hourly TEC over Kenya and automatically updates ev
 st_autorefresh(interval=60000, key="data_refresh")
 schedule_download_and_plot()
 
-# Function to reboot the app
-def auto_reboot(interval):
-    time.sleep(interval)
-    st.experimental_rerun()
+# Set the interval (1 hour)
+REBOOT_INTERVAL = 3600  # in seconds
 
-# Set the interval (in seconds) for the reboot
-interval = 3600  # 1 hour
+# Initialize the next reboot time in session state
+if "next_reboot_time" not in st.session_state:
+    st.session_state.next_reboot_time = datetime.now() + timedelta(seconds=REBOOT_INTERVAL)
 
 # Display a message
-st.write("This app is set to reboot every hour to reduce computational resource usage and ensure efficient performance.")
+st.write(f"The app is set to reboot every {REBOOT_INTERVAL // 60} minutes ( 1 Hr) to ensure efficient performance.")
 
-# Call the auto_reboot function
-auto_reboot(interval)
+# Check if it's time to reboot
+if datetime.now() >= st.session_state.next_reboot_time:
+    st.write("Rebooting the app now...")
+    st.session_state.next_reboot_time = datetime.now() + timedelta(seconds=REBOOT_INTERVAL)  # Reset the reboot time
+    st.rerun()  # Trigger the app reboot
+
+# Normal app logic
+# Convert to UTC
+next_reboot_time_utc = st.session_state.next_reboot_time.astimezone(pytz.UTC)
+# Display time in UTC
+st.write(f"Next reboot scheduled at: {next_reboot_time_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+
+# Function to check memory usage and return the memory usage percentage
+def print_memory_usage():
+    # Get memory usage in MB
+    memory_info = psutil.virtual_memory()
+    memory_usage = memory_info.percent
+    total_memory = memory_info.total / (1024 ** 3)  # in GB
+    used_memory = memory_info.used / (1024 ** 3)  # in GB
+    
+    print(f"Total Memory: {total_memory:.2f} GB")
+    print(f"Used Memory: {used_memory:.2f} GB")
+    print(f"Memory Usage: {memory_usage:.2f}%")
+    
+    return memory_usage  # Return the memory usage for further use
+
+# Call the function and get the memory usage
+memory_usage = print_memory_usage()
+
+# Example threshold for high memory usage
+if memory_usage > 70:  # Example threshold
+    st.warning("High memory usage detected. Consider optimizing the app.")

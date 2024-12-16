@@ -4,3 +4,5 @@ basemap
 streamlit-autorefresh
 numpy
 tensorflow
+psutil
+pytz
