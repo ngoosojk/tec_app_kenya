@@ -1,7 +1,7 @@
 import os
 import json
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import matplotlib.pyplot as plt
 from mpl_toolkits.basemap import Basemap
 import streamlit as st
@@ -171,7 +171,7 @@ def plot_data(filenames, model_path='model.keras'):
 
     # Add dotted contour lines at whole number intervals
     contour_levels = np.arange(np.floor(grid_vtec.min()), np.ceil(grid_vtec.max()) + 1, 5)
-    cs = m.contour(x, y, grid_vtec.reshape(grid_lons.shape), levels=contour_levels, colors='white', linewidths=2.0, linestyles='dotted')
+    cs = m.contour(x, y, grid_vtec.reshape(grid_lons.shape), levels=contour_levels, colors='white', linewidths=1.5, linestyles='dotted')
     plt.clabel(cs, inline=1, fontsize=8, fmt='%1.0f')
 
     # Add the main colorbar for TECU
@@ -202,7 +202,7 @@ def plot_data(filenames, model_path='model.keras'):
 # Function to automate the process every 5 minutes
 @st.cache_data(ttl=240)
 def schedule_download_and_plot():
-    end_time = datetime.utcnow()
+    end_time = datetime.now(timezone.utc)
     start_time = end_time - timedelta(hours=1)
     st_time = start_time.strftime("%Y-%m-%d%%20%H:%M:%S")
     en_time = end_time.strftime("%Y-%m-%d_%H:%M:%S")
