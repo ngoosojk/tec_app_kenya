@@ -171,7 +171,7 @@ def plot_data(filenames, model_path='model.keras'):
 
     # Add dotted contour lines at whole number intervals
     contour_levels = np.arange(np.floor(grid_vtec.min()), np.ceil(grid_vtec.max()) + 1, 5)
-    cs = m.contour(x, y, grid_vtec.reshape(grid_lons.shape), levels=contour_levels, colors='white', linewidths=1.5, linestyles='dotted')
+    cs = m.contour(x, y, grid_vtec.reshape(grid_lons.shape), levels=contour_levels, colors='white', linewidths=2.0, linestyles='dotted')
     plt.clabel(cs, inline=1, fontsize=8, fmt='%1.0f')
 
     # Add the main colorbar for TECU
