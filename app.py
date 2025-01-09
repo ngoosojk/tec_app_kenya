@@ -217,7 +217,7 @@ def schedule_download_and_plot():
 
 # Streamlit app layout and execution
 st.title("Near Real-Time Total Electron Content (TEC) Over Kenya")
-st.write("This app visualizes hourly TEC over Kenya and automatically updates every 5 minutes.")
+st.write("This app visualizes hourly TEC over Kenya and automatically refreshes every 5 minutes.")
 st_autorefresh(interval=300000, key="data_refresh")
 schedule_download_and_plot()
 
@@ -229,7 +229,7 @@ if "next_reboot_time" not in st.session_state:
     st.session_state.next_reboot_time = datetime.now() + timedelta(seconds=REBOOT_INTERVAL)
 
 # Display a message
-st.write(f"This app visualizes hourly TEC over Kenya and automatically refreshes every 5 minutes. The app is set to reboot every {REBOOT_INTERVAL // 60} minutes ( 1 Hr) to ensure efficient performance.")
+st.write(f"The app is set to reboot every {REBOOT_INTERVAL // 60} minutes ( 1 Hr) to ensure efficient performance.")
 
 # Check if it's time to reboot
 if datetime.now() >= st.session_state.next_reboot_time:
