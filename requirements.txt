@@ -6,6 +6,5 @@ tensorflow==2.18.0
 basemap==1.4.1
 psutil==5.9.0
 pytz==2023.3.post1
-pykrige
-scikit-learn
-pandas
+scikit-learn==1.6.1 
+pandas==2.1.4
