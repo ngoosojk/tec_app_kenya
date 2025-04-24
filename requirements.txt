@@ -8,3 +8,4 @@ psutil==5.9.0
 pytz==2023.3.post1
 scikit-learn==1.6.1 
 pandas==2.1.4
+openpyxl==3.1.5
