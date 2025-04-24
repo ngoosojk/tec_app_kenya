@@ -1,12 +1,12 @@
 # ***Near Real-Time Total Electron Content (TEC) Over Kenya***
 
-This Streamlit app visualizes hourly Total Electron Content (TEC) over Kenya and automatically updates every 5 minutes. TEC is an important parameter affecting the accuracy of Global Navigation Satellite Systems (GNSS), including GPS. This app downloads Near-Real TEC data, processes it, trains a machine learning model to predict TEC values, and displays the results on a map.
+This Streamlit app visualizes hourly Total Electron Content (TEC) over Kenya and automatically updates every 5 minutes. TEC is an important parameter affecting the accuracy of Global Navigation Satellite Systems (GNSS), including GPS. This app downloads Near-Real TEC data, processes it, trains a machine learning model to extraporate TEC values, and displays the extraporated vaues on a map.
 
 ## ***Features***
 
 - **Automatic Data Download:** Downloads TEC data from the specified URLs.
 - **Data Processing:** Removes outliers and prepares data for training.
-- **Model Training:** Trains a TensorFlow model to predict TEC values.
+- **Model Training:** Trains an ANN model to predict TEC values.
 - **Visualization:** Plots the TEC values on a map, showing the predicted TEC over Kenya.
 - **Automatic Refresh:** Updates the data and visualization every 5 minutes.
 
@@ -43,25 +43,35 @@ To run the app locally, follow these steps:
 3. **TEC Visualization:**
     - The map displays the predicted TEC values over Kenya. The color gradient represents the TEC values in TECU (Total Electron Content Units) and the associated Ionospheric range error in meters.
 
-4. **Reboot Interval:**
-    - The app is set to reboot every hour to ensure efficient performance. The next reboot time is displayed on the app.
 
 ## ***Directory Structure***
 
-- `datasets/`: Directory to store downloaded data in JSON format.
-- `maps/`: Directory to save generated maps.
-- `app.py`: Main application script.
-- `requirements.txt`: File containing all the dependencies required to run the app.
-- `model.keras`: Zip file containing the model.
+- datasets/: Directory for storing downloaded data in JSON format.
+
+- maps/: Directory for saving generated maps.
+
+- app.py: Main application script.
+
+- requirements.txt: File listing all dependencies required to run the app.
+
+- model_performance/: Directory for saving model performance metrics.
+
+- model_losses/: Directory for saving model loss graphs.
+
+- model.keras: Saved model file in Keras format.
+
+
 
 ## ***Configuration***
 
 - **Data Source URLs:**
     - The app downloads data from the Malindi and Nairobi GNSS receivers, accessible on the ESWUA website (http://www.eswua.ingv.it/index.php/gnss-scintillation/gnss-real-time-data), using specified URLs.
 
-## ***Memory Management***
+## ***Accessing the Deployed App***
 
-- The app monitors memory usage and provides a warning if high memory usage is detected. This helps in optimizing the app for better performance.
+You can access the deployed app at: https://tec-app-kenya.streamlit.app/.
+If it’s asleep 😴, just wake it up! 😄
+
 
 ## **Contributing**
 

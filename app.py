@@ -11,10 +11,16 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
 import psutil
 import pytz
+import pandas as pd
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 # Create directories if they don't exist
 os.makedirs('datasets', exist_ok=True)
-os.makedirs('maps', exist_ok=True)
+os.makedirs('maps/interpolated_maps', exist_ok=True)
+os.makedirs('maps/maps_with_outliers', exist_ok=True)
+os.makedirs('maps/maps_without_outliers', exist_ok=True)
+os.makedirs('model_losses', exist_ok=True)
+os.makedirs('model_performance', exist_ok=True)
 
 # Function to download data from a given URL and return the filename
 def download_data(url, filename):
@@ -28,11 +34,17 @@ def download_data(url, filename):
         with open(filepath, 'w') as sample:
             json.dump(parameters, sample, indent=4, separators=(',', ': '))
 
+        if not parameters:
+            print(f"Downloaded file {filepath} is empty.")
+            return None
+
         print(f"Data downloaded and saved to {filepath}")
         return filepath
 
     except Exception as e:
-        print(f"Failed to download data from {url}. The servers cannot be reached. Error: {e}")
+        error_message = f"Data download failed. ESWUA servers not reachable. Error: {e}"
+        print(error_message)
+        st.error(error_message)
         return None
 
 # Function to remove outliers using the IQR method and a minimum threshold for vtec values
@@ -65,8 +77,24 @@ def prepare_data(ipp_lons, ipp_lats, vtec_values):
     y = np.array(vtec_values)
     return X, y
 
-# Function to train the model with early stopping
-def train_model(X_train, y_train, model_path='model.keras'):
+# Function to plot and save the graph of epochs against losses
+def plot_and_save_losses(history, start_time_str, end_time_str):
+    fig, ax = plt.subplots()
+    ax.plot(history.history['loss'], label='Training Loss')
+    ax.plot(history.history['val_loss'], label='Validation Loss')
+    ax.set_xlabel('Epochs')
+    ax.set_ylabel('Loss')
+    ax.set_title(f'Training and Validation Loss\n{start_time_str} to {end_time_str} UTC')
+    ax.legend()
+
+    loss_graph_filename = os.path.join('model_losses', f"loss_graph_{start_time_str.replace(' ', '_').replace(':', '-')}_to_{end_time_str.replace(' ', '_').replace(':', '-')}.png")
+    plt.savefig(loss_graph_filename, bbox_inches='tight')
+    plt.close()
+    print(f"Loss graph saved to {loss_graph_filename}")
+    return loss_graph_filename
+
+# Function to train the model with early stopping and save losses
+def train_model(X_train, y_train, start_time_str, end_time_str, model_path='model.keras'):
     model = tf.keras.models.Sequential([
         tf.keras.layers.Input(shape=(2,)),
         tf.keras.layers.Dense(64, activation='relu'),
@@ -84,11 +112,15 @@ def train_model(X_train, y_train, model_path='model.keras'):
     # Implement early stopping
     early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
-    history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_split=0.1, verbose=0, callbacks=[early_stopping])
-    print("Training loss:", history.history['loss'][-1])
+    history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_split=0.3, verbose=0, callbacks=[early_stopping])
+    
+
+    # Plot and save the loss graph
+    plot_and_save_losses(history, start_time_str, end_time_str)
+    
     model.save(model_path)
     print("Model saved.")
-    return model
+    return model, history
 
 # Function to predict VTEC values using the trained model
 def predict_vtec(model, lons, lats):
@@ -100,17 +132,28 @@ def plot_data(filenames, model_path='model.keras'):
     ipp_lons = []
     ipp_lats = []
     vtec_values = []
+    valid_filenames = []
 
     for filename in filenames:
         if filename is None:
-            print("Skipping plot due to failed data download.")
-            return
+            continue
 
         with open(filename, 'r') as f:
             data = json.load(f)
+        if not data:
+            print(f"Downloaded file {filename} is empty.")
+            continue
+
+        valid_filenames.append(filename)
         ipp_lons.extend([record['ipp_lon'] for record in data if record['elevation'] is not None and record['elevation'] >= 30])
         ipp_lats.extend([record['ipp_lat'] for record in data if record['elevation'] is not None and record['elevation'] >= 30])
         vtec_values.extend([record['vtec'] for record in data if record['elevation'] is not None and record['elevation'] >= 30])
+
+    if len(valid_filenames) == 0:
+        print("Skipping plot due to failed data download.")
+        return
+    elif len(valid_filenames) == 1:
+        print(f"Plotting done using only {valid_filenames[0]}.")
 
     filtered_ipp_lons, filtered_ipp_lats, filtered_vtec_values = remove_outliers(ipp_lons, ipp_lats, vtec_values)
 
@@ -121,7 +164,9 @@ def plot_data(filenames, model_path='model.keras'):
     X_train, y_train = prepare_data(filtered_ipp_lons, filtered_ipp_lats, filtered_vtec_values)
 
     # Train a new model each time
-    model = train_model(X_train, y_train, model_path)
+    start_time_str = valid_filenames[0].split('_')[1] + ' ' + valid_filenames[0].split('_')[2] + ':' + valid_filenames[0].split('_')[3] + ':' + valid_filenames[0].split('_')[4]
+    end_time_str = valid_filenames[0].split('_')[5] + ' ' + valid_filenames[0].split('_')[6] + ':' + valid_filenames[0].split('_')[7] + ':' + valid_filenames[0].split('_')[8].split('.')[0]
+    model, history = train_model(X_train, y_train, start_time_str, end_time_str, model_path)
 
     min_latitude = -5.0
     max_latitude = 5.2
@@ -188,24 +233,117 @@ def plot_data(filenames, model_path='model.keras'):
     cbar2_ax.set_yticklabels([(3.24 / 20) * t for t in cbar.get_ticks()])  # Set the tick labels for cbar2
     cbar2_ax.set_ylabel('Ionospheric range error (L1) in m', fontsize=12)  # Set the label for cbar2
 
-    start_time_str = filenames[0].split('_')[1] + ' ' + filenames[0].split('_')[2] + ':' + filenames[0].split('_')[3] + ':' + filenames[0].split('_')[4]
-    end_time_str = filenames[0].split('_')[5] + ' ' + filenames[0].split('_')[6] + ':' + filenames[0].split('_')[7] + ':' + filenames[0].split('_')[8].split('.')[0]
     plt.suptitle(f'Near Real-Time Hourly Total Electron Content (TEC) Over Kenya\n{start_time_str} to {end_time_str} UTC', fontsize=15)
 
-    # Save the map as an image file in the maps folder
-    map_filename = os.path.join('maps', f"map_{start_time_str.replace(' ', '_').replace(':', '-')}_to_{end_time_str.replace(' ', '_').replace(':', '-')}.png")
-    plt.savefig(map_filename, bbox_inches='tight')  # Use bbox_inches='tight' to ensure proper alignment of ticks
+    # Save the interpolated map as an image file in the interpolated_maps folder
+    interpolated_map_filename = os.path.join('maps/interpolated_maps', f"interpolated_map_{start_time_str.replace(' ', '_').replace(':', '-')}_to_{end_time_str.replace(' ', '_').replace(':', '-')}.png")
+    plt.savefig(interpolated_map_filename, bbox_inches='tight')  # Use bbox_inches='tight' to ensure proper alignment of ticks
 
-    plt.tight_layout()  # Adjust subplots to fit into figure area, leaving space for the title.
-    st.pyplot(fig)
+    plt.tight_layout()
+    st.pyplot(fig)  # Display the interpolated map in the Streamlit app
+
+    # Save map with outliers
+    save_map_with_outliers(ipp_lons, ipp_lats, vtec_values, start_time_str, end_time_str)
+
+    # Save map without outliers
+    save_map_without_outliers(filtered_ipp_lons, filtered_ipp_lats, filtered_vtec_values, start_time_str, end_time_str)
+
+    # Evaluate model performance
+    y_pred = model.predict(X_train)
+    mae = mean_absolute_error(y_train, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_train, y_pred))
+    r2 = r2_score(y_train, y_pred)
+    n_points = len(y_train)
+    
+    # Save model performance
+    save_model_performance(mae, rmse, r2, n_points, start_time_str, end_time_str, history.history['loss'][-1], history.history['val_loss'][-1])
+
+def save_map_with_outliers(ipp_lons, ipp_lats, vtec_values, start_time_str, end_time_str):
+    fig, ax = plt.subplots(figsize=(8, 7))
+    m = Basemap(projection='merc', llcrnrlat=-5.0, urcrnrlat=5.2,
+                llcrnrlon=33.0, urcrnrlon=42.0,
+                resolution='l', ax=ax)
+    m.drawcoastlines()
+    m.drawcountries()
+
+    x, y = m(ipp_lons, ipp_lats)
+    sc = m.scatter(x, y, c=vtec_values, cmap='viridis', marker='o', vmin=0, vmax=100)
+    
+    plt.colorbar(sc, label='VTEC')
+    plt.xlabel('IPP Longitude')
+    plt.ylabel('IPP Latitude')
+    
+    plt.title(f'IPP Latitude vs Longitude with VTEC values\n{start_time_str} to {end_time_str} UTC')
+    plt.tight_layout()
+    
+    map_with_outliers_filename = os.path.join('maps/maps_with_outliers', f"map_with_outliers_{start_time_str.replace(' ', '_').replace(':', '-')}_to_{end_time_str.replace(' ', '_').replace(':', '-')}.png")
+    plt.savefig(map_with_outliers_filename, bbox_inches='tight')
+    plt.close()
+
+def save_map_without_outliers(ipp_lons, ipp_lats, vtec_values, start_time_str, end_time_str):
+    fig, ax = plt.subplots(figsize=(8, 7))
+    m = Basemap(projection='merc', llcrnrlat=-5.0, urcrnrlat=5.2,
+                llcrnrlon=33.0, urcrnrlon=42.0,
+                resolution='l', ax=ax)
+    m.drawcoastlines()
+    m.drawcountries()
+
+    x, y = m(ipp_lons, ipp_lats)
+    sc = m.scatter(x, y, c=vtec_values, cmap='viridis', marker='o', vmin=0, vmax=100)
+    
+    plt.colorbar(sc, label='VTEC')
+    plt.xlabel('IPP Longitude')
+    plt.ylabel('IPP Latitude')
+    
+    plt.title(f'IPP Latitude vs Longitude with VTEC values\n{start_time_str} to {end_time_str} UTC')
+    plt.tight_layout()
+    
+    map_without_outliers_filename = os.path.join('maps/maps_without_outliers', f"map_without_outliers_{start_time_str.replace(' ', '_').replace(':', '-')}_to_{end_time_str.replace(' ', '_').replace(':', '-')}.png")
+    plt.savefig(map_without_outliers_filename, bbox_inches='tight')
+    plt.close()
+
+# Function to save model performance metrics to an Excel file
+def save_model_performance(mae, rmse, r2, n_points, start_time_str, end_time_str, training_loss, validation_loss):
+    performance_file_path = os.path.join('model_performance', 'model_performance.xlsx')
+    
+    # Read existing data
+    if os.path.exists(performance_file_path):
+        perf_df = pd.read_excel(performance_file_path)
+    else:
+        perf_df = pd.DataFrame(columns=['Start Time', 'End Time', 'N', 'MAE', 'RMSE', 'R²', 'Training Loss', 'Validation Loss'])
+    
+    # Append new data
+    new_data = {
+        'Start Time': start_time_str,
+        'End Time': end_time_str,
+        'N': n_points,
+        'MAE': mae,
+        'RMSE': rmse,
+        'R²': r2,
+        'Training Loss': training_loss,
+        'Validation Loss': validation_loss,
+    }
+    
+    perf_df = pd.concat([perf_df, pd.DataFrame([new_data])], ignore_index=True)
+    
+    # Save to Excel
+    perf_df.to_excel(performance_file_path, index=False)
+    print(f"Model performance saved to {performance_file_path}")
+
 
 # Function to automate the process every 5 minutes
 @st.cache_data(ttl=240)
 def schedule_download_and_plot():
-    end_time = datetime.now(timezone.utc)
+    # Get the current time and the time 1 hour ago, rounded down to the nearest 5-minute mark
+    end_time = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    end_time = end_time - timedelta(minutes=end_time.minute % 5)
     start_time = end_time - timedelta(hours=1)
+
+
+    # Format the times as required by the URL
     st_time = start_time.strftime("%Y-%m-%d%%20%H:%M:%S")
-    en_time = end_time.strftime("%Y-%m-%d_%H:%M:%S")
+    en_time = end_time.strftime("%Y-%m-%d%%20%H:%M:%S")
+
     
     nai_url = f'http://ws-eswua.rm.ingv.it/scintillation.php/records/wsnai0p?filter=dt,bt,{st_time},{en_time}&filter0=PRN,sw,&filter1=PRN,sw,N&filter2=PRN,sw,N&filter3=PRN,sw,N&filter4=PRN,sw,N&filter5=PRN,sw,N&filter6=PRN,sw,N&include=dt,PRN,vtec,ipp_lon,ipp_lat,elevation,&order=dt'
     mal_url = f'http://ws-eswua.rm.ingv.it/scintillation.php/records/wsmal0p?filter=dt,bt,{st_time},{en_time}&filter0=PRN,sw,&filter1=PRN,sw,N&filter2=PRN,sw,N&filter3=PRN,sw,N&filter4=PRN,sw,N&filter5=PRN,sw,N&filter6=PRN,sw,N&include=dt,PRN,vtec,ipp_lon,ipp_lat,elevation,&order=dt'
@@ -221,45 +359,4 @@ st.write("This app visualizes hourly TEC over Kenya and automatically refreshes 
 st_autorefresh(interval=300000, key="data_refresh")
 schedule_download_and_plot()
 
-# Set the interval (1 hour)
-REBOOT_INTERVAL = 3600  # in seconds
 
-# Initialize the next reboot time in session state
-if "next_reboot_time" not in st.session_state:
-    st.session_state.next_reboot_time = datetime.now() + timedelta(seconds=REBOOT_INTERVAL)
-
-# Display a message
-st.write(f"The app is set to reboot every {REBOOT_INTERVAL // 60} minutes ( 1 Hr) to ensure efficient performance.")
-
-# Check if it's time to reboot
-if datetime.now() >= st.session_state.next_reboot_time:
-    st.write("Rebooting the app now...")
-    st.session_state.next_reboot_time = datetime.now() + timedelta(seconds=REBOOT_INTERVAL)  # Reset the reboot time
-    st.rerun()  # Trigger the app reboot
-
-# Normal app logic
-# Convert to UTC
-next_reboot_time_utc = st.session_state.next_reboot_time.astimezone(pytz.UTC)
-# Display time in UTC
-st.write(f"Next reboot scheduled at: {next_reboot_time_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-
-# Function to check memory usage and return the memory usage percentage
-def print_memory_usage():
-    # Get memory usage in MB
-    memory_info = psutil.virtual_memory()
-    memory_usage = memory_info.percent
-    total_memory = memory_info.total / (1024 ** 3)  # in GB
-    used_memory = memory_info.used / (1024 ** 3)  # in GB
-    
-    print(f"Total Memory: {total_memory:.2f} GB")
-    print(f"Used Memory: {used_memory:.2f} GB")
-    print(f"Memory Usage: {memory_usage:.2f}%")
-    
-    return memory_usage  # Return the memory usage for further use
-
-# Call the function and get the memory usage
-memory_usage = print_memory_usage()
-
-# Example threshold for high memory usage
-if memory_usage > 70:  # Example threshold
-    st.warning("High memory usage detected. Consider optimizing the app.")
